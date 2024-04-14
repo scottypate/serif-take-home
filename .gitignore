@@ -1,0 +1,11 @@
+.DS_Store
+data/2024-04-01_anthem_index.json
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/

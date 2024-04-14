@@ -1,67 +1,151 @@
-# Serif Health Takehome Interview
+# Serif Take Home Challenge
 
-This repository contains the files and instructions for our takehome engineering interview. Please *locally* copy to your own public repo or [import](https://github.com/new/import) to your github account for use in sharing solutions back to us. Direct public forks and pull requests will expose your identity and solution to other candidates also working on this interview question, and we want the interview process to be fair for everyone. 
+https://github.com/serif-health/takehome
 
-## Context
-Serif Health was founded with a mission to make the US healthcare system more transparent, efficient, and affordable for everyone. One of the challenging problems we're solving at Serif Health is making healthcare *pricing* data transparent and uniform for all market participants. There are myriad reasons this is difficult.
+## Introduction
 
-At the macro level:
-- Most data in healthcare is protected by law, sensitive by default and tends to be locked up in proprietary systems or data formats.
-- The data aggregators and clearinghouses that do have access to clean, normalized bulk data assets tend to employ extremely expensive and restrictive licensing terms. 
-- While recent price transparency laws have required hospitals and carriers to publish their pricing, compliance and data sharing occurs at varying levels of completeness and consistency.  
+Deliverable
 
-At the micro level:
-- Medical billing and coding for a specific procedure can be very complicated and is contingent on place of service, patient history and comorbidities, structure of insurance arrangements, so on and so forth. Many procedures are lots of N of 1 type cases. 
-- Insurance companies (carriers) establish pre-negotiated non-published contracted rates with each facility, physician group, or health system that reimburses the healthcare provider at a rate and structure very different from what is 'charged'. 
+You should send us a link to a public repository or zip file that contains at miminum:
 
-Summed together, all this complexity contributes to a general lack of transparency and market efficency in our healthcare system.
+    The script or code used to parse the file and produce output.
+    The setup or packaging file(s) required to bootstrap and execute your solution code
+    The output URL list.
+    A README file, explaining your solution, how long it took you to write, how long it took to run, and the tradeoffs you made along the way.
 
+## Approach
 
+My initial thought is to output the URLs listed in the file as quickly as possible. No optimization, no processing, just output the URLs. This will give me a baseline for how long it takes to read the file and output the URLs.
 
-## Objective
-In July 2022, insurance carriers were required to publish their negotiated prices with all providers and facilities under the Transparency in Coverage Act. Pricing for every procedure code for every provider in the country is a lot of data; thus, the published files are extremely large and require some forethought and skill to be able to work with them. 
+### Challenges
 
-Our customers typically want to know and compare reimbursement rates for healthcare services from specific carriers. E.g., what does Anthem reimburse orthopedic surgeons in New York state for total knee replacement surgery? To get there, we need to go to Anthem's Transparency in Coverage website, find their appropriate index file (also called a table of contents file), look up the MRF file URLs in the index for the correct plan, pull the MRF, extract the data, and we have our answer. The challenge for us is that carriers don't always follow the schemas, so these postings and indexes aren't always easy to decipher - it takes some sleuthing and creativity to get to the answers we seek. 
+* Not only is the file large, but after `head -n 5 data/2024-04-01_anthem_index.json` I realized that the entire file is 1, single, 28GB JSON message! Hilarious abuse of JSON. So we are going to have to stream parse parts of this file.
 
-For this interview, we'll give you an index file URL and we'll skip in-network MRF processing for now, since the data elements in the in-network file are significantly more complex and variant. 
+* The files are associated to plans and we only want the files associated to the "Anthem PPO network in New York state". The naming looks inconsistent, so I did the simplest thing and just looked for "NY" and "PPO" in the plan name, printed out 100 of them, and manually checked them against the [Anthem EIN lookup](https://www.anthem.com/machine-readable-file/search/).
 
-Your task is to write some code that can open an index file, stream through it, and isolate a set of network files in the index. We'd simply like to know, *what is the list of machine readable file URLs that represent the Anthem PPO network in New York state*? 
+* PPO networks seem to be negotiated arbitrarily across the country. For example, the `NEW YORK STATE NURSES ASSOCIATION BENEFIT FUND` has in-network negotiated rate files that cover NY, CA, CO, CT, GA, etc. All of the files appear to have `NY` in the name so as a simple heuristic I will use that to filter the files. This is a tradeoff I am making to simplify the problem, and likely wouldn't hold true in a real-world scenario.
 
+![NY PPO Plans](./docs/example-ppo-files.png)
 
-## Inputs
-The input to this takehome is the Anthem machine readable index file [table of contents](https://antm-pt-prod-dataz-nogbd-nophi-us-east1.s3.amazonaws.com/anthem/2024-04-01_anthem_index.json.gz) for April 2024. 
+* The PPO files seem to be hosted directly on s3 while the other files are hosted on a different domain. However, the s3 files are not consistently named, i.e. the `NY_PPO_GGHAMEDAP33_04_09.json.gz` file shown in the EIN lookup is named `NY_GGHAMEDAP33_04_09.json.gz` in the index file. If we wanted to be more strict about which files to return, we may be able to use the s3 domain as a filter.
 
-You should write code that can open the machine readable index file and extract some in-network file URLs from it according to the schema published at [CMS' transparency in coverage repository](https://github.com/CMSgov/price-transparency-guide/tree/master/schemas/table-of-contents), so you can extract the data requested.
+## Solution
 
-## Outputs
-Your output should be the list of machine readable file URLs corresponding to Anthem's PPO in New York state. Make sure to read through the hints and pointers section before declaring your solution complete.
+I was planning to case a wide net and include all the files relevant to the NY PPO plans, but the hint `Is Highmark the same as Anthem?` make me think that I should be more strict about the files I return. Anthem and Highmark are affiliated via [BCBSA](https://en.wikipedia.org/wiki/Blue_Cross_Blue_Shield_Association), but Anthem appears to be an exclusive subset distinct from Highmark. I will only return files that are explicitly associated with Anthem PPO plans in NY, stored on the s3 domain. I don't feel great about the s3 domain filter as a long-term solution, but it is the best heuristic I can come up with given the constraints. While it may not be useful next month (they may change how they host the files), I think it is useful enough to generate a list of URLs for this month.
 
-## Hints and Pointers
-As you start working with the index, you'll quickly notice that the index file itself is extremly large, data is very frequently repeated, plan descriptions seem to contain random businesses in various regions around the country, and that there are a handful of different url styles. 
+You can read my list of URLs [here](./data/solution.txt).
 
-- How do you handle the file size and format efficiently, when the uncompressed file will exceed memory limitations on most systems? 
-- When you look at your output URL list, which segments of the URL are changing, which segments are repeating, and what might that mean?
-- Is the 'description' field helpful? Is it complete? Does it change relative to 'location'? Is Highmark the same as Anthem?
-- Anthem has an interactive MRF lookup system. This lookup can be used to gather additional information - but it requires you to input the EIN or name of an employer who offers an Anthem health plan: [Anthem EIN lookup](https://www.anthem.com/machine-readable-file/search/). How might you find a business likely to be in the Anthem NY PPO? How can you use this tool to confirm if your answer is complete?
+### Running the Code
 
-Use creative thinking and your best judgement to proceed here, and discuss your decisions in your writeup. 
+#### Pre-requisites (macOS)
 
+* If you already have go installed, you can run the code with the following command:
 
-### Deliverable
-You should [send us](mailto:engineering@serifhealth.com) a link to a public repository or zip file that contains at miminum:
-1. The script or code used to parse the file and produce output. 
-2. The setup or packaging file(s) required to bootstrap and execute your solution code
-3. The output URL list.
-4. A README file, explaining your solution, how long it took you to write, how long it took to run, and the tradeoffs you made along the way. 
+```bash
+go run main.go
+```
 
-## Expectations
-### Time vs Quality
-We are a small engineering team with limited resources, and often have to make hard tradeoffs to meet deadlines and make rapid forward progress. We do not want this takehome to take more than a few hours out of your day. So, please timebox coding your solution to two hours max, and know that you have the opportunity to discuss the tradeoffs you made when submitting your solution. Experienced engineers should be able to complete the coding portion in about 90 minutes, perhaps less if you have prior healthcare experience. If you think this will take you dramatically more time than that, let us know before starting the takehome so we can discuss why. 
+If you don't want to install go, you can use the Dockerfile to run the code.
 
-If you finish early, we'd recommend adding additional notes or commentary to the README (e.g. discussion of performance characteristics, how you would ideally test/deploy/run your code in a production environment, feature iterations that might come next, so on), but please don't exceed the timebox doing so. 
+* GNU Make (optional) - `brew install make`
 
-### Language Choice
-You can choose any language you want, but your solution should be portable enough to run on someone else's machine. 
+* Docker (optional) - If you are using Docker, you can run the code with the following command:
 
-### Dependencies
-You can and *probably should* use dependencies (JSON parsers, type validators, etc) and libraries from public package managers in your language of choice. Again, your solution should be portable enough to run on someone else's machine, so if you leverage packaged dependencies this please make sure relevant setup instructions to install the dependencies and execute the solution are included.
+```bash
+make run
+```
+
+### Improvements
+
+* This could be make concurrent by adding a goroutine to process each message. The runtime of this script was ~140s on my machine. I think you could reduce this to ~5s with some buffer optimization and goroutines. We could proabably forgo the bufio package altogether in favor of `os.Read()` directly if performace was the primary concern.
+
+* All of this process is using metadata from the JSON file. There is only so much that can be done with the metadata. The contents of the files could be processed to extract more information. For example, the naming filters we are doing are very fragile and probably prone to error. If we could extract the contents of the files and use that to filter, we could be more confident in the results.
+
+* I am a huge fan of golang CLIs, so I would probably make this a CLI tool with flags for the filters. This would make it easier to use and more flexible to run across different datasets without changing the code.
+
+* The `main()` function is a bit long and could be broken up into smaller functions. This would make the code easier to read and maintain.
+
+## Resources
+
+<details>
+  <summary>Code to print 25 plan names to the console.</summary>
+
+```golang
+package main
+
+import (
+	"bufio"
+	"encoding/json"
+	"fmt"
+	"io"
+	"log"
+	"os"
+	"regexp"
+)
+
+type FileLocation struct {
+	Description string `json:"description"`
+	Location    string `json:"location"`
+}
+
+type ReportingPlan struct {
+	PlanName       string `json:"plan_name"`
+	PlanIdType     string `json:"plan_id_type"`
+	PlanId         string `json:"plan_id"`
+	PlanMarketType string `json:"plan_market_type"`
+}
+
+type ReportingStructure struct {
+	ReportingPlans    []ReportingPlan `json:"reporting_plans"`
+	InNetworkFiles    []FileLocation  `json:"in_network_files"`
+	AllowedAmountFile FileLocation    `json:"allowed_amount_file"`
+}
+
+type Record map[string]interface{}
+
+func main() {
+	filename := "data/2024-04-01_anthem_index.json"
+	nyPattern := regexp.MustCompile("\\sNY\\s")
+	ppoPattern := regexp.MustCompile("\\sPPO\\s")
+
+	file, err := os.Open(filename)
+	if err != nil {
+		fmt.Println("Error opening file:", err)
+		return
+	}
+	defer file.Close()
+
+	reader := bufio.NewReader(file)
+	for {
+		var record ReportingStructure
+		// Each line is a separate JSON object within the larger JSON object
+		line, err := reader.ReadBytes(byte('\n'))
+
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			log.Fatal(err)
+		}
+		// Remove the trailing newline and comma from the line
+		err = json.Unmarshal(line[:len(line)-2], &record)
+		if err != nil {
+			continue
+		}
+		n := 0
+		for _, plan := range record.ReportingPlans {
+			hasNy := nyPattern.MatchString(plan.PlanName)
+			hasPpo := ppoPattern.MatchString(plan.PlanName)
+			if hasNy && hasPpo {
+				fmt.Println(plan.PlanName)
+				n++
+				if n > 25 {
+					break
+				}
+			}
+		}
+	}
+}
+```
+
+</details>
