@@ -39,6 +39,14 @@ You can read my list of URLs [here](./data/solution.txt).
 
 #### Pre-requisites (macOS)
 
+* You will need to download the data file from the Anthem website and place it in the `data/` directory. The file is too large to include in the repository.
+
+```bash
+curl -o data/2024-04-01_anthem_index.json.gz https://antm-pt-prod-dataz-nogbd-nophi-us-east1.s3.amazonaws.com/anthem/2024-04-01_anthem_index.json.gz
+```
+
+```bash
+
 * If you already have go installed, you can run the code with the following command:
 
 ```bash
